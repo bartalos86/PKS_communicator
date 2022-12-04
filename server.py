@@ -20,21 +20,7 @@ keepalive_thread = None
 keepalive_needed = True
 exit = False
 
-print("Listening Ip:")
-ip = str(input())
-print("Listening port:")
-port = int(input())
 
-server_address = (ip, port)
-
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket.bind(server_address)
-server_socket.settimeout(2.0)
-
-
-keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-keepalive_socket.settimeout(5.0)
-keepalive_socket.bind((ip,9999))
 
 # keepalive_addr = ('192.168.0.122', 9999)
 
@@ -255,11 +241,30 @@ def listen_for_commands():
         else:
             print("Unknown command")
     
+def start():
+    global server_address
+    global server_socket
+    global keepalive_socket
+    print("Listening Ip:")
+    ip = str(input())
+    print("Listening port:")
+    port = int(input())
+
+    server_address = (ip, port)
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_socket.bind(server_address)
+    server_socket.settimeout(2.0)
+
+
+    keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    keepalive_socket.settimeout(5.0)
+    keepalive_socket.bind((ip,9999))
+    synchronize_with_client()
+    listen_for_commands()
 
 
 
-synchronize_with_client()
-listen_for_commands()
 # message, address = server_socket.recvfrom(fragment_size)
 # unpacked_data = header.unpack(message)
 # data = unpacked_data[4][:int(unpacked_data[2])]

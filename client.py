@@ -12,23 +12,9 @@ header = struct.Struct('H I I H 200s I')
 destination_addr = ("127.0.0.1", 12000)
 fragment_size = 1024
 request_header = struct.Struct(f'H I I H 2s I')
-
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-client_socket.settimeout(2.5)
-
-# Keepalive
-keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-keepalive_socket.settimeout(3.0)
 keepalive_thread = None
 keepalive_needed = True
-#Application start
 
-print("Destination Ip:")
-ip = input()
-print("Destination port:")
-port = int(input())
-keepalive_addr = (ip, 9999)
-destination_addr = (ip, port)
 
 
 def synchronize_with_server():
@@ -205,11 +191,32 @@ def listen_for_requests():
             quit()
 
 
+def start():
+    global destination_addr
+    global client_socket
+    global keepalive_socket
+    global keepalive_addr
+
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client_socket.settimeout(2.5)
+
+    # Keepalive
+    keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    keepalive_socket.settimeout(3.0)
+
+    #Application start
+
+    print("Destination Ip:")
+    ip = input()
+    print("Destination port:")
+    port = int(input())
+    keepalive_addr = (ip, 9999)
+    destination_addr = (ip, port)
+    synchronize_with_server()
+    listen_for_requests()
 
 
 
-synchronize_with_server()
-listen_for_requests()
 # message = "Hellow world!Hellow world!Hellow world!Hellow world!Hellow world!Hellow world!6".encode("utf-8")
 # values = (3, 1, len(message),2, message, 2545)
 # packed_data = header.pack(*values)
