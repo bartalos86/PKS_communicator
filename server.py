@@ -20,11 +20,8 @@ keepalive_thread = None
 keepalive_needed = True
 exit = False
 
-
-
-
 print("Listening Ip:")
-ip = input()
+ip = str(input())
 print("Listening port:")
 port = int(input())
 
@@ -36,8 +33,10 @@ server_socket.settimeout(2.0)
 
 
 keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-keepalive_socket.settimeout(3.0)
-keepalive_addr = (ip, 9999)
+keepalive_socket.settimeout(5.0)
+keepalive_socket.bind((ip,9999))
+
+# keepalive_addr = ('192.168.0.122', 9999)
 
 
 def synchronize_with_client():
@@ -189,44 +188,38 @@ def send_file():
     data = file.read()
     send_data(data, 1, fragment_size, dest_path, path)
 
-def send_keep_alive():
-    global keepalive_needed
-    keepalive_needed = True
-    timeout_count = 0
+def process_keep_alive():
     global exit
-    exit = False
+    global keepalive_needed
     keepalive_header = struct.Struct(f'H I I H 2s I')
-    packet_num = 0
-
+    exit = False
+    timeout_count = 0
     while keepalive_needed and not exit:
         try:
-            header_data = keepalive_header.pack(*(5, packet_num, 0, 0, b"", 0)) #KEEP_ALIVE
-            keepalive_socket.sendto(header_data, keepalive_addr)
-            packet_num = packet_num +1
-            time.sleep(1)
-            message, _ = keepalive_socket.recvfrom(fragment_size)
+            message, address = keepalive_socket.recvfrom(fragment_size)
             packet = keepalive_header.unpack(message)
-            ok_id = packet[1]
-            if packet[0] == 5 and (packet_num - ok_id <= 4):
+            request_type = packet[0]
+            packet_id = packet[1]
+            if request_type == 5:
+                header_data = keepalive_header.pack(*(5, packet_id, 0, 0, b"", 0)) #OK
+                keepalive_socket.sendto(header_data, address)
                 timeout_count = 0
 
-           
         except TimeoutError:
-            print("Tiemout")
             timeout_count = timeout_count +1
             if timeout_count > 3:
                 print(f"Keepalive timed out - {timeout_count}")
-                keepalive_needed = False
                 exit = True
                 quit()
+
         except ConnectionResetError:
-            print("Connection with the server was terminated. Quitting...")
+            print("connection has been reset! - Keepalive")
             exit = True
             quit()
         
 def listen_for_commands():
     global keepalive_thread
-    keepalive_thread = threading.Thread(target=send_keep_alive)
+    keepalive_thread = threading.Thread(target=process_keep_alive)
     keepalive_thread.start()
     global exit
     global keepalive_needed
@@ -237,7 +230,7 @@ def listen_for_commands():
         if not keepalive_thread.is_alive():
             print("Restarting keepalive thread")
             keepalive_needed = True
-            keepalive_thread = threading.Thread(target=send_keep_alive)
+            keepalive_thread = threading.Thread(target=process_keep_alive)
             keepalive_thread.start()
 
         print("What do you want to do?")

@@ -31,10 +31,6 @@ keepalive_addr = (ip, 9999)
 destination_addr = (ip, port)
 
 
-keepalive_socket.bind(keepalive_addr)
-
-
-
 def synchronize_with_server():
     not_sync = True
     packet_id = 0
@@ -123,41 +119,48 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
     print(f"Data fragment size: {data_fragment_size} B")
     print("--------------------------------------------")
 
-
-
-def process_keep_alive():
-    global exit
+def send_keep_alive():
     global keepalive_needed
-    keepalive_header = struct.Struct(f'H I I H 2s I')
-    exit = False
+    keepalive_needed = True
     timeout_count = 0
+    global exit
+    exit = False
+    keepalive_header = struct.Struct(f'H I I H 2s I')
+    packet_num = 0
+
     while keepalive_needed and not exit:
         try:
-            message, address = keepalive_socket.recvfrom(fragment_size)
+            header_data = keepalive_header.pack(*(5, packet_num, 0, 0, b"", 0)) #KEEP_ALIVE
+            keepalive_socket.sendto(header_data, keepalive_addr)
+            packet_num = packet_num +1
+            time.sleep(3)
+            message, _ = keepalive_socket.recvfrom(fragment_size)
             packet = keepalive_header.unpack(message)
-            request_type = packet[0]
-            packet_id = packet[1]
-            if request_type == 5:
-                header_data = keepalive_header.pack(*(5, packet_id, 0, 0, b"", 0)) #OK
-                keepalive_socket.sendto(header_data, address)
+            ok_id = packet[1]
+            if packet[0] == 5 and (packet_num - ok_id <= 4):
                 timeout_count = 0
 
+           
         except TimeoutError:
+            print("Tiemout")
             timeout_count = timeout_count +1
             if timeout_count > 3:
                 print(f"Keepalive timed out - {timeout_count}")
+                keepalive_needed = False
                 exit = True
                 quit()
-
+        
         except ConnectionResetError:
-            print("connection has been reset! - Keepalive")
+            print("Keepalive: Connection with the server was terminated. Quitting...")
             exit = True
             quit()
+
+
 
 def listen_for_requests():
     global keepalive_thread
 
-    keepalive_thread = threading.Thread(target=process_keep_alive)
+    keepalive_thread = threading.Thread(target=send_keep_alive)
     keepalive_thread.start()
     global keepalive_needed
     global exit
@@ -168,7 +171,7 @@ def listen_for_requests():
             if not keepalive_thread.is_alive():
                 print("Restarting keepalive thread")
                 keepalive_needed = True
-                keepalive_thread = threading.Thread(target=process_keep_alive)
+                keepalive_thread = threading.Thread(target=send_keep_alive)
                 keepalive_thread.start()
             header = struct.Struct(f'H I I H 200s I')
             message, _ = client_socket.recvfrom(fragment_size)
