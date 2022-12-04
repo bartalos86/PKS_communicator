@@ -3,15 +3,24 @@ import os
 import random
 import socket
 import struct
+import threading
 import time
 import zlib
 
 header = struct.Struct('H I I H 1000s I') 
-server_address = ('localhost', 12000)
+request_header = struct.Struct(f'H I I H 2s I')
+
+# server_address = ('localhost', 12000)
 client_address = None
 
 fragment_size = 1024
 packet_id = 0
+
+keepalive_thread = None
+keepalive_needed = True
+exit = False
+
+
 
 
 print("Listening Ip:")
@@ -23,7 +32,12 @@ server_address = (ip, port)
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_socket.bind(server_address)
-server_socket.settimeout(1.0)
+server_socket.settimeout(2.0)
+
+
+keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+keepalive_socket.settimeout(3.0)
+keepalive_addr = (ip, 9999)
 
 
 def synchronize_with_client():
@@ -44,14 +58,36 @@ def synchronize_with_client():
         except TimeoutError:
             pass
 
-def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/null/"):
+def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/null/", source_path = ""):
 
     if client_address is None:
         print("No connection established")
         return
 
+    #Turn off keepalive
+    global keepalive_needed
+    global keepalive_thread
+    keepalive_needed = False
+    if keepalive_thread != None:
+        keepalive_thread.join()
+
     data_fragments = math.ceil(len(data) / data_fragment_size)
     initialized = False
+
+    print("--------------------------------------------")
+    if data_type == 1:
+        print(f"Sending file: {os.path.basename(source_path)}")
+        print(f"Path: {os.path.abspath(source_path)}")
+
+    print(f"Total data size: {len(data)} B")
+    print(f"Total number of fragments: {data_fragments}")
+    print(f"Data fragment size: {data_fragment_size} B")
+    print("--------------------------------------------")
+
+
+    
+
+    data_header = struct.Struct(f'H I I H {data_fragment_size}s I')
     header = struct.Struct(f'H I I H 200s I')
     while not initialized:
         try:
@@ -60,44 +96,54 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
             server_socket.sendto(header_data, client_address)
             print("Init sent")
             message, _ = server_socket.recvfrom(fragment_size)
-            resp = header.unpack(message) #OK
-            if resp[0] == 2:
+            resp = request_header.unpack(message) #OK
+            if resp[0] == 2 and resp[1] == 0:
                 print("Data transfer initialized")
                 initialized = True
         except TimeoutError:
             time.sleep(1)
+        except ConnectionResetError:
+                print("The connection has been reset!")
+                return
 
     for frag_num in range(data_fragments):
-        
-        header = struct.Struct(f'H I I H {data_fragment_size}s I')
-        
         sent = False
         while not sent:
             data_to_send = data[frag_num*data_fragment_size:((frag_num+1)*data_fragment_size)]
             data_len = len(data_to_send)
             server_crc = zlib.crc32(data_to_send)
             error_inserted = False
+
             #simulated_error
             if random.randrange(200) > 190 and not error_inserted:
                 server_crc += 1
                 error_inserted = True
+            header_data = data_header.pack(*(7, frag_num, data_len, data_type, data_to_send, server_crc)) #Data
 
-            header_data = header.pack(*(7, frag_num, data_len, data_type, data_to_send, server_crc)) #Data
             try:
                 server_socket.sendto(header_data, client_address)
-                print("Data fragment sent")
-                message, _ = server_socket.recvfrom(fragment_size)
-                resp = header.unpack(message) #OK or RESEND
+                message, address = server_socket.recvfrom(fragment_size)
+                resp = request_header.unpack(message) #OK or RESEND
 
-                if resp[0] == 2 and resp[1] == frag_num:
-                    print("Data trannsmitted")
+                if resp[0] == 2 and client_address[1] == address[1] and resp[1] == frag_num:
+                    # print("Packet trannsmitted")
                     sent = True
                 elif resp[0] == 4 and resp[1] == frag_num:
                     print("Resend")
+                elif resp[0] == 4:
+                    print(f"Resend previous - {resp[1]} - {frag_num}")
+                    frag_num = resp[1]
+                    continue
                 else:
-                    time.sleep(2)
+                    pass
             except TimeoutError:
                 pass
+            except ConnectionResetError:
+                print("The connection has been reset!")
+                return
+
+    print("All data has been sent!")
+            
 
 def send_text():
     print("----------------")
@@ -141,12 +187,59 @@ def send_file():
     file = open(path, "rb")
     file_size = os.path.getsize(path)
     data = file.read()
-    send_data(data, 1, fragment_size, dest_path)
+    send_data(data, 1, fragment_size, dest_path, path)
 
+def send_keep_alive():
+    global keepalive_needed
+    keepalive_needed = True
+    timeout_count = 0
+    global exit
+    exit = False
+    keepalive_header = struct.Struct(f'H I I H 2s I')
+    packet_num = 0
+
+    while keepalive_needed and not exit:
+        try:
+            header_data = keepalive_header.pack(*(5, packet_num, 0, 0, b"", 0)) #KEEP_ALIVE
+            keepalive_socket.sendto(header_data, keepalive_addr)
+            packet_num = packet_num +1
+            time.sleep(1)
+            message, _ = keepalive_socket.recvfrom(fragment_size)
+            packet = keepalive_header.unpack(message)
+            ok_id = packet[1]
+            if packet[0] == 5 and (packet_num - ok_id <= 4):
+                timeout_count = 0
+
+           
+        except TimeoutError:
+            print("Tiemout")
+            timeout_count = timeout_count +1
+            if timeout_count > 3:
+                print(f"Keepalive timed out - {timeout_count}")
+                keepalive_needed = False
+                exit = True
+                quit()
+        except ConnectionResetError:
+            print("Connection with the server was terminated. Quitting...")
+            exit = True
+            quit()
         
 def listen_for_commands():
-    quit = False
-    while not quit:
+    global keepalive_thread
+    keepalive_thread = threading.Thread(target=send_keep_alive)
+    keepalive_thread.start()
+    global exit
+    global keepalive_needed
+    exit = False
+    while not exit:
+
+        # Keepalive
+        if not keepalive_thread.is_alive():
+            print("Restarting keepalive thread")
+            keepalive_needed = True
+            keepalive_thread = threading.Thread(target=send_keep_alive)
+            keepalive_thread.start()
+
         print("What do you want to do?")
         print("1 - send text")
         print("2 - send file")
@@ -158,7 +251,14 @@ def listen_for_commands():
         elif response == "2":
             send_file()
         elif response == "3":
-            quit = True
+            keepalive_needed = False
+            keepalive_thread.join()
+            header = struct.Struct(f'H I I H 200s I')
+            header_data = header.pack(*(3, 0, 0, 0, b"", 0)) #EXIT
+            server_socket.sendto(header_data, client_address)
+
+            exit = True
+            # keepalive_thread.join()
         else:
             print("Unknown command")
     
