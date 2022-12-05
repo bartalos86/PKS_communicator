@@ -6,12 +6,14 @@ import socket
 import struct
 import time
 import zlib
+import connection_type
+import data_type
 
 
 header = struct.Struct('H I I H 200s I') 
 destination_addr = ("127.0.0.1", 12000)
 fragment_size = 1024
-request_header = struct.Struct(f'H I I H 2s I')
+request_header = struct.Struct(f'H I')
 keepalive_thread = None
 keepalive_needed = True
 
@@ -23,12 +25,12 @@ def synchronize_with_server():
     print("Waiting for synchronization....")
     while not_sync:
         try:
-            header_data = header.pack(*(0, packet_id, 0, 0, b"", 0)) #SYNC
+            header_data = header.pack(*(connection_type.SYN, packet_id, 0, 0, b"", 0)) #SYNC
             client_socket.sendto(header_data, destination_addr)
             message, address = client_socket.recvfrom(fragment_size)
             resp = header.unpack(message)
 
-            if resp[0] == 1 and resp[1] == packet_id + 1:
+            if resp[0] == connection_type.ACCEPT_CONNECTION and resp[1] == packet_id + 1:
                 not_sync = False
                 print("Client: Connection established")
                 packet_id = resp[1] +1
@@ -68,26 +70,26 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                 packet_crc = packet[5]
                 packet_id = packet[1]
                 #error verification
-                if packet[0] == 7:
+                if packet[0] == connection_type.DATA:
                     print(f"Data fragment received - {packet_id} CRC passed: {client_crc == packet_crc}")
                     print(f"Packet {packet_id} frag num: {frag_num}")
                     if client_crc == packet_crc and packet_id == frag_num:
                         data += received_data;
-                        header_data = request_header.pack(*(2, packet_id, 0, 0, b"", 0)) #OK
+                        header_data = request_header.pack(*(connection_type.OK, packet_id)) #OK
                         client_socket.sendto(header_data, destination_addr)
                         received = True
                     elif frag_num > packet_id:
                         print(f"Already received - {packet_id}")
-                        header_data = request_header.pack(*(2, packet_id, 0, 0, b"", 0)) #OK
+                        header_data = request_header.pack(*(connection_type.OK, packet_id)) #OK
                         client_socket.sendto(header_data, destination_addr)
                     else:
                         print("Sending RESEND REQUEST")
-                        header_data = request_header.pack(*(4, packet_id, 0, 0, b"", 0)) #RESEND
+                        header_data = request_header.pack(*(connection_type.RESEND_DATA, packet_id)) #RESEND
                         client_socket.sendto(header_data, destination_addr)
             except TimeoutError:
                 pass
 
-    if data_type == 0:
+    if data_type == data_type.MESSAGE:
         print("Full data receeived!")
         print(data)
     else:
@@ -120,14 +122,14 @@ def send_keep_alive():
 
     while keepalive_needed and not exit:
         try:
-            header_data = keepalive_header.pack(*(5, packet_num, 0, 0, b"", 0)) #KEEP_ALIVE
+            header_data = keepalive_header.pack(*(connection_type.KEEP_ALIVE, packet_num, 0, 0, b"", 0)) #KEEP_ALIVE
             keepalive_socket.sendto(header_data, keepalive_addr)
             packet_num = packet_num +1
             time.sleep(3)
             message, _ = keepalive_socket.recvfrom(fragment_size)
             packet = keepalive_header.unpack(message)
             ok_id = packet[1]
-            if packet[0] == 5 and (packet_num - ok_id <= 4):
+            if packet[0] == connection_type.KEEP_ALIVE and (packet_num - ok_id <= 4):
                 timeout_count = 0
 
            
@@ -176,23 +178,25 @@ def listen_for_requests():
                     continue
 
             request_type = packet[0]
-            data = str(packet[4][:int(packet[2])]).replace('\'','')
+            
 
-            received_ip = packet[4][:int(packet[2])]
-            crc_match = zlib.crc32(received_ip) == packet[5]
-
-            if not crc_match:
-                print(f"crc not match: {zlib.crc32(received_ip)} - {packet[5]}")
             #Task switch
-            if request_type == 8 and crc_match: 
-               
-                print(f"received ip {received_ip}")
+            if request_type == connection_type.SWITCH_TASKS: 
+                
+                received_ip = packet[4][:int(packet[2])]
+                crc_match = zlib.crc32(received_ip) == packet[5]
+                if not crc_match:
+                    print(f"Ip addess CRC code doesnt match")
+                    continue
+
+                print(f"Received own IP from server: {received_ip}")
                 own_address = (received_ip, destination_addr[1])
-                header_data = request_header.pack(*(2, 999, 0, 0, b"", 0)) #OK
+                header_data = request_header.pack(*(connection_type.OK, 999)) #OK
                 client_socket.sendto(header_data, address)
                 print("Task switch request received")
 
-            if request_type == 2 and packet[1] == 999: #Task switch confirm
+            #Task switch confirm
+            if request_type == connection_type.OK and packet[1] == 999: 
                 exit = True
                 keepalive_thread.join()
                 print("Task switch confirmation received!")
@@ -201,15 +205,22 @@ def listen_for_requests():
                 return {"own_address": own_address, "keepalive_addr": keepalive_addr}
 
 
-            if request_type == 3: #EXIT
+            if request_type == connection_type.END_CONNECTION: #EXIT
                 print("Exit received from the server. Quitting...")
                 exit = True
                 quit()
 
-            if request_type == 6:
+            if request_type == connection_type.INITIALIZE_DATA_TRANSFER:
+                data = packet[4][:int(packet[2])]
+                data_crc = zlib.crc32(data)
+                if data_crc != packet[5]:
+                    print("Data transfer initialization data CRC missmatch")
+                    continue
+
+                sanitized_data = str(data).replace('\'','')
                 data_type = int(packet[3])
-                config = data.split(";")
-                header_data = request_header.pack(*(2, packet[1], 0, 0, b"", 0)) #OK
+                config = sanitized_data.split(";")
+                header_data = request_header.pack(*(2, packet[1])) #OK
                 client_socket.sendto(header_data, destination_addr)
                 if data_type == 0:
                     # print(f"nss: {config}")

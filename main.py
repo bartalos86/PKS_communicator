@@ -17,11 +17,9 @@ def start():
         if option == 1:
             print("Starting server...")
             if switch_data != None:
-                print(switch_data)
                 switch_data = server.start(server_p_address=switch_data["own_address"])
             else:
                 switch_data = server.start()
-            print(switch_data)
             if switch_data != None:
                 option = 2
                 show_menu = False
@@ -35,7 +33,6 @@ def start():
                 switch_data = client.start(destination_p_address=switch_data["client_address"])
             else:
                 switch_data = client.start()
-            print(switch_data)
 
             if switch_data != None:
                 option = 1

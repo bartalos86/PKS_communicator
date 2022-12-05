@@ -6,9 +6,11 @@ import struct
 import threading
 import time
 import zlib
+import connection_type
+import data_type
 
 header = struct.Struct('H I I H 1000s I') 
-request_header = struct.Struct(f'H I I H 2s I')
+request_header = struct.Struct(f'H I')
 
 # server_address = ('localhost', 12000)
 client_address = None
@@ -34,8 +36,8 @@ def synchronize_with_client():
             resp = header.unpack(message) #SYNC
             print("REQUEST: " + str(resp[0]))
             packet_id = resp[1] +1
-            if resp[0] == 0:
-                header_data = header.pack(*(1, packet_id, 0, 0, b"", 0)) #SYNC ACK
+            if resp[0] == connection_type.SYN:
+                header_data = header.pack(*(connection_type.ACCEPT_CONNECTION, packet_id, 0, 0, b"", 0)) #SYNC ACK
                 server_socket.sendto(header_data, address)
                 not_sync = False
                 global client_address
@@ -78,12 +80,13 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
     while not initialized:
         try:
             initialization_data = f"{path};{data_fragments};{data_fragment_size}".encode("utf-8")
-            header_data = header.pack(*(6, 0, len(initialization_data), data_type, initialization_data, 0)) #Initialization
+            crc = zlib.crc32(initialization_data)
+            header_data = header.pack(*(connection_type.INITIALIZE_DATA_TRANSFER, 0, len(initialization_data), data_type, initialization_data, crc)) #Initialization
             server_socket.sendto(header_data, client_address)
             print("Init sent")
             message, _ = server_socket.recvfrom(fragment_size)
             resp = request_header.unpack(message) #OK
-            if resp[0] == 2 and resp[1] == 0:
+            if resp[0] == connection_type.OK and resp[1] == 0:
                 print("Data transfer initialized")
                 initialized = True
         except TimeoutError:
@@ -104,19 +107,19 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
             if random.randrange(200) > 190 and not error_inserted:
                 server_crc += 1
                 error_inserted = True
-            header_data = data_header.pack(*(7, frag_num, data_len, data_type, data_to_send, server_crc)) #Data
+            header_data = data_header.pack(*(connection_type.DATA, frag_num, data_len, data_type, data_to_send, server_crc)) #Data
 
             try:
                 server_socket.sendto(header_data, client_address)
                 message, address = server_socket.recvfrom(fragment_size)
                 resp = request_header.unpack(message) #OK or RESEND
 
-                if resp[0] == 2 and client_address[1] == address[1] and resp[1] == frag_num:
+                if resp[0] == connection_type.OK and client_address[1] == address[1] and resp[1] == frag_num:
                     # print("Packet trannsmitted")
                     sent = True
-                elif resp[0] == 4 and resp[1] == frag_num:
+                elif resp[0] == connection_type.RESEND_DATA and resp[1] == frag_num:
                     print("Resend")
-                elif resp[0] == 4:
+                elif resp[0] == connection_type.RESEND_DATA:
                     print(f"Resend previous - {resp[1]} - {frag_num}")
                     frag_num = resp[1]
                     continue
@@ -136,9 +139,14 @@ def send_text():
     print("What do you want to send: ")
     message = input()
     print("Fragment size: ")
-    fragment_size = int(input())
+    try:
+        fragment_size = int(input())
+    except:
+        print("Fragment size must be a number. Defaulting to 512B")
+        fragment_size = 512
+        
     if fragment_size > 1004:
-        print("Too big fragment size")
+        print("Too big fragment size. Defaulting to 1004B")
         fragment_size = 1004
     
     if fragment_size < 1:
@@ -149,7 +157,7 @@ def send_text():
 
     data = message.encode("utf-8")
 
-    send_data(data, 0, fragment_size)
+    send_data(data, data_type.MESSAGE, fragment_size)
 
 
 def send_file():
@@ -159,9 +167,14 @@ def send_file():
     print("Save file path: ")
     dest_path = input()
     print("Fragment size: ")
-    fragment_size = int(input())
+    try:
+        fragment_size = int(input())
+    except:
+        print("Fragment size must be a number. Defaulting to 512B")
+        fragment_size = 512
+
     if fragment_size > 1004:
-        print("Too big fragment size")
+        print("Too big fragment size. Defaulting to 1004B")
         fragment_size = 1004
     
     if fragment_size < 1:
@@ -169,11 +182,14 @@ def send_file():
         fragment_size = 2
 
     print(f"Destination will be ${client_address}")
+    try: 
+        file = open(path, "rb")
+        data = file.read()
+    except:
+        print("File does not exist or cannot be read.")
+        return
 
-    file = open(path, "rb")
-    file_size = os.path.getsize(path)
-    data = file.read()
-    send_data(data, 1, fragment_size, dest_path, path)
+    send_data(data, data_type.FILE, fragment_size, dest_path, path)
 
 def send_task_switch():
     global exit
@@ -185,7 +201,7 @@ def send_task_switch():
             data = str(client_address[0]).encode("utf-8")
             data_len = len(data)
             crc = zlib.crc32(data)
-            header_data = header.pack(*(8, packet_num, data_len, 0, data, crc)) #TASK_SWITCH
+            header_data = header.pack(*(connection_type.SWITCH_TASKS, packet_num, data_len, 0, data, crc)) #TASK_SWITCH
             print("Task switch sent")
             server_socket.sendto(header_data, client_address)
             message, address = server_socket.recvfrom(fragment_size)
@@ -195,13 +211,13 @@ def send_task_switch():
                 print("cannot unpack OK")
                 pass
 
-            if resp[0] == 2 and resp[1] == packet_num:
+            if resp[0] == connection_type.OK and resp[1] == packet_num:
                 print("Task confirm received")
                 exit = True
                 keepalive_needed = False
                 keepalive_thread.join()
 
-                header_data = request_header.pack(*(2, packet_num, 0, 0, b"", 0)) #OK
+                header_data = request_header.pack(*(connection_type.OK, packet_num)) #OK
                 server_socket.sendto(header_data, address)
                 server_socket.close()
                 keepalive_socket.close()
@@ -228,7 +244,7 @@ def process_keep_alive():
             request_type = packet[0]
             packet_id = packet[1]
             if request_type == 5:
-                header_data = keepalive_header.pack(*(5, packet_id, 0, 0, b"", 0)) #OK
+                header_data = keepalive_header.pack(*(connection_type.KEEP_ALIVE, packet_id, 0, 0, b"", 0)) #OK
                 keepalive_socket.sendto(header_data, address)
                 timeout_count = 0
 
@@ -278,7 +294,7 @@ def listen_for_commands():
             keepalive_needed = False
             keepalive_thread.join()
             header = struct.Struct(f'H I I H 200s I')
-            header_data = header.pack(*(3, 0, 0, 0, b"", 0)) #EXIT
+            header_data = header.pack(*(connection_type.END_CONNECTION, 0, 0, 0, b"", 0)) #EXIT
             server_socket.sendto(header_data, client_address)
 
             exit = True
