@@ -181,12 +181,19 @@ def send_task_switch():
     packet_num = 999
     while not exit:
         try:
-            # header = struct.Struct(f'H I I H 200s I')
-            header_data = request_header.pack(*(8, packet_num, 0, 0, b"", 0)) #TASK_SWITCH
+            header = struct.Struct(f'H I I H 200s I')
+            data = str(client_address[0]).encode("utf-8")
+            data_len = len(data)
+            crc = zlib.crc32(data)
+            header_data = header.pack(*(8, packet_num, data_len, 0, data, crc)) #TASK_SWITCH
             print("Task switch sent")
             server_socket.sendto(header_data, client_address)
             message, address = server_socket.recvfrom(fragment_size)
-            resp = request_header.unpack(message) #OK
+            try: 
+                resp = request_header.unpack(message) #OK
+            except:
+                print("cannot unpack OK")
+                pass
 
             if resp[0] == 2 and resp[1] == packet_num:
                 print("Task confirm received")
@@ -266,7 +273,7 @@ def listen_for_commands():
             send_file()
         elif response == "3":
             send_task_switch()
-            return {"server_address": server_address, "client_address": client_address}
+            return {"server_address": server_address, "client_address": (client_address[0], server_address[1])}
         elif response == "4":
             keepalive_needed = False
             keepalive_thread.join()

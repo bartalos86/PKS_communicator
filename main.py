@@ -18,7 +18,7 @@ def start():
             print("Starting server...")
             if switch_data != None:
                 print(switch_data)
-                switch_data = server.start(server_p_address=switch_data["destination_addr"])
+                switch_data = server.start(server_p_address=switch_data["own_address"])
             else:
                 switch_data = server.start()
             print(switch_data)
@@ -32,7 +32,7 @@ def start():
         elif option == 2:
             print("Starting client...")
             if switch_data != None:
-                switch_data = client.start(destination_p_address=switch_data["server_address"])
+                switch_data = client.start(destination_p_address=switch_data["client_address"])
             else:
                 switch_data = client.start()
             print(switch_data)

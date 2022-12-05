@@ -149,11 +149,11 @@ def send_keep_alive():
 
 def listen_for_requests():
     global keepalive_thread
-
-    keepalive_thread = threading.Thread(target=send_keep_alive)
-    keepalive_thread.start()
     global keepalive_needed
     global exit
+    keepalive_thread = threading.Thread(target=send_keep_alive)
+    keepalive_thread.start()
+    own_address = None
     exit = False
     while not exit:
         try:
@@ -178,8 +178,16 @@ def listen_for_requests():
             request_type = packet[0]
             data = str(packet[4][:int(packet[2])]).replace('\'','')
 
+            received_ip = packet[4][:int(packet[2])]
+            crc_match = zlib.crc32(received_ip) == packet[5]
+
+            if not crc_match:
+                print(f"crc not match: {zlib.crc32(received_ip)} - {packet[5]}")
             #Task switch
-            if request_type == 8:
+            if request_type == 8 and crc_match: 
+               
+                print(f"received ip {received_ip}")
+                own_address = (received_ip, destination_addr[1])
                 header_data = request_header.pack(*(2, 999, 0, 0, b"", 0)) #OK
                 client_socket.sendto(header_data, address)
                 print("Task switch request received")
@@ -190,7 +198,7 @@ def listen_for_requests():
                 print("Task switch confirmation received!")
                 client_socket.close()
                 keepalive_socket.close()
-                return {"destination_addr": destination_addr, "keepalive_addr": keepalive_addr}
+                return {"own_address": own_address, "keepalive_addr": keepalive_addr}
 
 
             if request_type == 3: #EXIT
