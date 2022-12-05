@@ -67,6 +67,7 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
     print(f"Total data size: {len(data)} B")
     print(f"Total number of fragments: {data_fragments}")
     print(f"Data fragment size: {data_fragment_size} B")
+    print(f"Last fragment size: {len(data[(data_fragments-1)*data_fragment_size:((data_fragments)*data_fragment_size)])} B")
     print("--------------------------------------------")
 
 
@@ -174,6 +175,39 @@ def send_file():
     data = file.read()
     send_data(data, 1, fragment_size, dest_path, path)
 
+def send_task_switch():
+    global exit
+    global keepalive_needed
+    packet_num = 999
+    while not exit:
+        try:
+            # header = struct.Struct(f'H I I H 200s I')
+            header_data = request_header.pack(*(8, packet_num, 0, 0, b"", 0)) #TASK_SWITCH
+            print("Task switch sent")
+            server_socket.sendto(header_data, client_address)
+            message, address = server_socket.recvfrom(fragment_size)
+            resp = request_header.unpack(message) #OK
+
+            if resp[0] == 2 and resp[1] == packet_num:
+                print("Task confirm received")
+                exit = True
+                keepalive_needed = False
+                keepalive_thread.join()
+
+                header_data = request_header.pack(*(2, packet_num, 0, 0, b"", 0)) #OK
+                server_socket.sendto(header_data, address)
+                server_socket.close()
+                keepalive_socket.close()
+
+        except TimeoutError:
+            time.sleep(1)
+        except ConnectionResetError:
+            print("Connection has been reset.")
+            exit = True
+            quit()
+
+
+
 def process_keep_alive():
     global exit
     global keepalive_needed
@@ -222,7 +256,8 @@ def listen_for_commands():
         print("What do you want to do?")
         print("1 - send text")
         print("2 - send file")
-        print("3 - exit")
+        print("3 - task switch")
+        print("4 - exit")
         response  = input()
 
         if response == "1":
@@ -230,6 +265,9 @@ def listen_for_commands():
         elif response == "2":
             send_file()
         elif response == "3":
+            send_task_switch()
+            return {"server_address": server_address, "client_address": client_address}
+        elif response == "4":
             keepalive_needed = False
             keepalive_thread.join()
             header = struct.Struct(f'H I I H 200s I')
@@ -241,17 +279,24 @@ def listen_for_commands():
         else:
             print("Unknown command")
     
-def start():
+def start(server_p_address = None):
     global server_address
     global server_socket
     global keepalive_socket
-    print("Listening Ip:")
-    ip = str(input())
-    print("Listening port:")
-    port = int(input())
+    keepalive_address = None
+    if server_p_address == None:
+        print("Listening Ip:")
+        ip = str(input())
+        print("Listening port:")
+        port = int(input())
+        server_address = (ip, port)
+        keepalive_address = (ip, 9999)
+    else:
+        server_address = server_p_address
+        keepalive_address = (server_p_address[0], 9999)
 
-    server_address = (ip, port)
 
+    
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind(server_address)
     server_socket.settimeout(2.0)
@@ -259,9 +304,9 @@ def start():
 
     keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     keepalive_socket.settimeout(5.0)
-    keepalive_socket.bind((ip,9999))
+    keepalive_socket.bind(keepalive_address)
     synchronize_with_client()
-    listen_for_commands()
+    return listen_for_commands()
 
 
 

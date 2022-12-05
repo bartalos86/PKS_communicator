@@ -47,7 +47,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
     
     print(f"Total frags: {total_fragments}")
     data_header = struct.Struct(f'H I I H {data_fragment_size}s I')
-
+    last_fragment_size = 0
     for frag_num in range(total_fragments):
         received = False
         while not received:
@@ -60,6 +60,9 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                     continue
 
                 data_len = packet[2]
+                if frag_num == total_fragments -1:
+                    last_fragment_size = data_len
+
                 received_data = packet[4][:int(packet[2])]
                 client_crc = zlib.crc32(received_data)
                 packet_crc = packet[5]
@@ -103,6 +106,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
     print(f"Total data size: {len(data)} B")
     print(f"Total number of fragments: {total_fragments}")
     print(f"Data fragment size: {data_fragment_size} B")
+    print(f"Last fragment size: {last_fragment_size} B")
     print("--------------------------------------------")
 
 def send_keep_alive():
@@ -159,15 +163,35 @@ def listen_for_requests():
                 keepalive_needed = True
                 keepalive_thread = threading.Thread(target=send_keep_alive)
                 keepalive_thread.start()
+
             header = struct.Struct(f'H I I H 200s I')
-            message, _ = client_socket.recvfrom(fragment_size)
+            message, address = client_socket.recvfrom(fragment_size)
             try:
                 packet = header.unpack(message)
             except:
-                continue
+                try:
+                    packet = request_header.unpack(message)
+                except:
+                    print("Packet cannot be unpacked")
+                    continue
 
             request_type = packet[0]
             data = str(packet[4][:int(packet[2])]).replace('\'','')
+
+            #Task switch
+            if request_type == 8:
+                header_data = request_header.pack(*(2, 999, 0, 0, b"", 0)) #OK
+                client_socket.sendto(header_data, address)
+                print("Task switch request received")
+
+            if request_type == 2 and packet[1] == 999: #Task switch confirm
+                exit = True
+                keepalive_thread.join()
+                print("Task switch confirmation received!")
+                client_socket.close()
+                keepalive_socket.close()
+                return {"destination_addr": destination_addr, "keepalive_addr": keepalive_addr}
+
 
             if request_type == 3: #EXIT
                 print("Exit received from the server. Quitting...")
@@ -191,7 +215,7 @@ def listen_for_requests():
             quit()
 
 
-def start():
+def start(destination_p_address = None):
     global destination_addr
     global client_socket
     global keepalive_socket
@@ -205,15 +229,19 @@ def start():
     keepalive_socket.settimeout(3.0)
 
     #Application start
-
-    print("Destination Ip:")
-    ip = input()
-    print("Destination port:")
-    port = int(input())
-    keepalive_addr = (ip, 9999)
-    destination_addr = (ip, port)
+    if destination_p_address == None:
+        print("Destination Ip:")
+        ip = input()
+        print("Destination port:")
+        port = int(input())
+        keepalive_addr = (ip, 9999)
+        destination_addr = (ip, port)
+    else:
+        destination_addr = destination_p_address
+        keepalive_addr = (destination_addr[0], 9999)
+    
     synchronize_with_server()
-    listen_for_requests()
+    return listen_for_requests()
 
 
 
