@@ -247,7 +247,7 @@ def start(destination_p_address = None):
     global keepalive_addr
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    client_socket.settimeout(2.5)
+    client_socket.settimeout(3.5)
 
     # Keepalive
     keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

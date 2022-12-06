@@ -305,7 +305,7 @@ def listen_for_commands():
             keepalive_needed = False
             keepalive_thread.join()
             header = struct.Struct(f'H I I H 200s I')
-            header_data = header.pack(*(connection_type.END_CONNECTION, 0, 0, 0, b"", 0)) #EXIT
+            header_data = request_header.pack(*(connection_type.END_CONNECTION,0)) #EXIT
             server_socket.sendto(header_data, client_address)
 
             exit = True
@@ -333,7 +333,7 @@ def start(server_p_address = None):
     
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind(server_address)
-    server_socket.settimeout(2.0)
+    server_socket.settimeout(3.5)
 
 
     keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
