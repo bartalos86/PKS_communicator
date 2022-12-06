@@ -7,7 +7,7 @@ import threading
 import time
 import zlib
 import connection_type
-import data_type
+import data_type as data_type_enum
 
 header = struct.Struct('H I I H 1000s I') 
 request_header = struct.Struct(f'H I')
@@ -15,7 +15,7 @@ request_header = struct.Struct(f'H I')
 # server_address = ('localhost', 12000)
 client_address = None
 
-fragment_size = 1024
+fragment_size = 1472
 packet_id = 0
 
 keepalive_thread = None
@@ -145,9 +145,9 @@ def send_text():
         print("Fragment size must be a number. Defaulting to 512B")
         fragment_size = 512
         
-    if fragment_size > 1004:
-        print("Too big fragment size. Defaulting to 1004B")
-        fragment_size = 1004
+    if fragment_size > 1452:
+        print("Too big fragment size. Defaulting to 1452B")
+        fragment_size = 1452
     
     if fragment_size < 1:
         print("Fragment size cannot be smaller than 1, resetting to 2B")
@@ -157,7 +157,7 @@ def send_text():
 
     data = message.encode("utf-8")
 
-    send_data(data, data_type.MESSAGE, fragment_size)
+    send_data(data, data_type_enum.MESSAGE, fragment_size)
 
 
 def send_file():
@@ -173,9 +173,9 @@ def send_file():
         print("Fragment size must be a number. Defaulting to 512B")
         fragment_size = 512
 
-    if fragment_size > 1004:
-        print("Too big fragment size. Defaulting to 1004B")
-        fragment_size = 1004
+    if fragment_size > 1452:
+        print("Too big fragment size. Defaulting to 1452B")
+        fragment_size = 1452
     
     if fragment_size < 1:
         print("Fragment size cannot be smaller than 1, resetting to 2B")
@@ -189,7 +189,7 @@ def send_file():
         print("File does not exist or cannot be read.")
         return
 
-    send_data(data, data_type.FILE, fragment_size, dest_path, path)
+    send_data(data, data_type_enum.FILE, fragment_size, dest_path, path)
 
 def send_task_switch():
     global exit
@@ -239,7 +239,7 @@ def process_keep_alive():
     timeout_count = 0
     while keepalive_needed and not exit:
         try:
-            message, address = keepalive_socket.recvfrom(fragment_size)
+            message, address = keepalive_socket.recvfrom(fragment_size) 
             packet = keepalive_header.unpack(message)
             request_type = packet[0]
             packet_id = packet[1]

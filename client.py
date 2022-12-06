@@ -7,12 +7,13 @@ import struct
 import time
 import zlib
 import connection_type
-import data_type
+import data_type as data_type_enum
 
 
 header = struct.Struct('H I I H 200s I') 
 destination_addr = ("127.0.0.1", 12000)
-fragment_size = 1024
+fragment_size = 1472
+
 request_header = struct.Struct(f'H I')
 keepalive_thread = None
 keepalive_needed = True
@@ -89,7 +90,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
             except TimeoutError:
                 pass
 
-    if data_type == data_type.MESSAGE:
+    if data_type == data_type_enum.MESSAGE:
         print("Full data receeived!")
         print(data)
     else:
