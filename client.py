@@ -25,10 +25,10 @@ def synchronize_with_server():
     print("Waiting for synchronization....")
     while not_sync:
         try:
-            header_data = header.pack(*(connection_type.SYN, packet_id, 0, 0, b"", 0)) #SYNC
+            header_data = request_header.pack(*(connection_type.SYN, packet_id)) #SYNC
             client_socket.sendto(header_data, destination_addr)
-            message, address = client_socket.recvfrom(fragment_size)
-            resp = header.unpack(message)
+            message, _ = client_socket.recvfrom(fragment_size)
+            resp = request_header.unpack(message)
 
             if resp[0] == connection_type.ACCEPT_CONNECTION and resp[1] == packet_id + 1:
                 not_sync = False
@@ -47,6 +47,8 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
     if keepalive_thread != None:
         keepalive_thread.join()
     
+    timeout_number = 0
+    
     print(f"Total frags: {total_fragments}")
     data_header = struct.Struct(f'H I I H {data_fragment_size}s I')
     last_fragment_size = 0
@@ -60,6 +62,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                 except struct.error:
                     print("Wrong header received")
                     continue
+                timeout_number = 0
 
                 data_len = packet[2]
                 if frag_num == total_fragments -1:
@@ -69,6 +72,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                 client_crc = zlib.crc32(received_data)
                 packet_crc = packet[5]
                 packet_id = packet[1]
+
                 #error verification
                 if packet[0] == connection_type.DATA:
                     print(f"Data fragment received - {packet_id} CRC passed: {client_crc == packet_crc}")
@@ -87,7 +91,10 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                         header_data = request_header.pack(*(connection_type.RESEND_DATA, packet_id)) #RESEND
                         client_socket.sendto(header_data, destination_addr)
             except TimeoutError:
-                pass
+                timeout_number = timeout_number +1
+                if timeout_number > 5:
+                    print("Connection timed out no data received!")
+                    quit()
 
     if data_type == data_type_enum.MESSAGE:
         print("Full data receeived!")
@@ -129,7 +136,7 @@ def send_keep_alive():
             message, _ = keepalive_socket.recvfrom(fragment_size)
             packet = keepalive_header.unpack(message)
             ok_id = packet[1]
-            if packet[0] == connection_type.KEEP_ALIVE and (packet_num - ok_id <= 4):
+            if packet[0] == connection_type.OK and (packet_num - ok_id <= 4):
                 timeout_count = 0
 
            
@@ -222,8 +229,7 @@ def listen_for_requests():
                 config = sanitized_data.split(";")
                 header_data = request_header.pack(*(2, packet[1])) #OK
                 client_socket.sendto(header_data, destination_addr)
-                if data_type == 0:
-                    # print(f"nss: {config}")
+                if data_type == data_type_enum.MESSAGE:
                     receive_data(data_type,int(config[2]),int(config[1]))
                 else:
                     receive_data(data_type,int(config[2]),int(config[1]),config[0][1:])

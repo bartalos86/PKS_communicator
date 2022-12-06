@@ -33,11 +33,10 @@ def synchronize_with_client():
     while not_sync:
         try:
             message, address = server_socket.recvfrom(fragment_size)
-            resp = header.unpack(message) #SYNC
-            print("REQUEST: " + str(resp[0]))
+            resp = request_header.unpack(message) #SYNC
             packet_id = resp[1] +1
             if resp[0] == connection_type.SYN:
-                header_data = header.pack(*(connection_type.ACCEPT_CONNECTION, packet_id, 0, 0, b"", 0)) #SYNC ACK
+                header_data = request_header.pack(*(connection_type.ACCEPT_CONNECTION, packet_id)) #SYNC ACK
                 server_socket.sendto(header_data, address)
                 not_sync = False
                 global client_address
@@ -73,9 +72,10 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
     print("--------------------------------------------")
 
 
-    
+    timeout_amount = 0
 
     data_header = struct.Struct(f'H I I H {data_fragment_size}s I')
+
     header = struct.Struct(f'H I I H 200s I')
     while not initialized:
         try:
@@ -90,13 +90,20 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
                 print("Data transfer initialized")
                 initialized = True
         except TimeoutError:
+            timeout_amount += timeout_amount +1
             time.sleep(1)
+            if timeout_amount > 5:
+                print("Data trasmission timed out! Quitting...")
+                quit()
+
         except ConnectionResetError:
-                print("The connection has been reset!")
-                return
+                print("The connection has been reset! Quittiing...")
+                time.sleep(2)
+                quit()
 
     for frag_num in range(data_fragments):
         sent = False
+        timeout_amount = 0
         while not sent:
             data_to_send = data[frag_num*data_fragment_size:((frag_num+1)*data_fragment_size)]
             data_len = len(data_to_send)
@@ -113,9 +120,8 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
                 server_socket.sendto(header_data, client_address)
                 message, address = server_socket.recvfrom(fragment_size)
                 resp = request_header.unpack(message) #OK or RESEND
-
+                timeout_amount = 0
                 if resp[0] == connection_type.OK and client_address[1] == address[1] and resp[1] == frag_num:
-                    # print("Packet trannsmitted")
                     sent = True
                 elif resp[0] == connection_type.RESEND_DATA and resp[1] == frag_num:
                     print("Resend")
@@ -126,10 +132,15 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
                 else:
                     pass
             except TimeoutError:
-                pass
+                timeout_amount += timeout_amount +1
+                if timeout_amount > 5:
+                    print("Data trasmission timed out! Quitting...")
+                    time.sleep(2)
+                    quit()
             except ConnectionResetError:
-                print("The connection has been reset!")
-                return
+                print("The connection has been reset! Quittiing...")
+                time.sleep(2)
+                quit()
 
     print("All data has been sent!")
             
@@ -243,8 +254,8 @@ def process_keep_alive():
             packet = keepalive_header.unpack(message)
             request_type = packet[0]
             packet_id = packet[1]
-            if request_type == 5:
-                header_data = keepalive_header.pack(*(connection_type.KEEP_ALIVE, packet_id, 0, 0, b"", 0)) #OK
+            if request_type == connection_type.KEEP_ALIVE:
+                header_data = keepalive_header.pack(*(connection_type.OK, packet_id, 0, 0, b"", 0)) #OK
                 keepalive_socket.sendto(header_data, address)
                 timeout_count = 0
 
