@@ -100,7 +100,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
 
     if data_type == data_type_enum.MESSAGE:
         print("Full data received!")
-        print(data)
+        print(f"Message: {data.decode('utf-8')}")
     else:
         print("Full file received!")
         ppath = pathlib.Path(path)

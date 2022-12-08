@@ -354,14 +354,21 @@ def start(server_p_address = None):
         keepalive_address = (server_p_address[0], 9999)
 
 
-    
-    server_socket.bind(server_address)
+    try:
+        server_socket.bind(server_address)
+    except:
+        print("This port or ip is already in use.")
+        return
     server_socket.settimeout(3.5)
 
 
     keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     keepalive_socket.settimeout(5.0)
-    keepalive_socket.bind(keepalive_address)
+    try:
+        keepalive_socket.bind(keepalive_address)
+    except:
+        print("This port or ip is already in use.")
+        return
     synchronize_with_client()
     return listen_for_commands()
 
