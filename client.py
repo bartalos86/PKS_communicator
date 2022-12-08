@@ -99,15 +99,14 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                 print("Some unknown error ocurred!")
 
     if data_type == data_type_enum.MESSAGE:
-        print("Full data receeived!")
+        print("Full data received!")
         print(data)
     else:
-        print("Full file receeived!")
+        print("Full file received!")
         ppath = pathlib.Path(path)
         ppath.parent.mkdir(parents=True, exist_ok=True)
         file = open(path, "wb")
         file.write(data)
-        file.close()
 
     print("--------------------------------------------")
     if data_type == 1:
@@ -143,18 +142,21 @@ def send_keep_alive():
 
            
         except TimeoutError:
-            print("Tiemout")
+            if not keepalive_needed or exit:
+                break
+
+            print("Timeout")
             timeout_count = timeout_count +1
             if timeout_count > 3:
                 print(f"Keepalive timed out - {timeout_count}")
                 keepalive_needed = False
                 exit = True
-                quit()
+                break
         
         except ConnectionResetError:
             print("Keepalive: Connection with the server was terminated. Quitting...")
             exit = True
-            quit()
+            break
 
 
 
@@ -183,7 +185,7 @@ def listen_for_requests():
                 try:
                     packet = request_header.unpack(message)
                 except:
-                    print("Packet cannot be unpacked")
+                    # print("Packet cannot be unpacked")
                     continue
 
             request_type = packet[0]
@@ -260,9 +262,13 @@ def start(destination_p_address = None):
         print("Destination Ip:")
         ip = input()
         print("Destination port:")
-        port = int(input())
-        keepalive_addr = (ip, 9999)
-        destination_addr = (ip, port)
+        try:
+            port = int(input())
+            keepalive_addr = (ip, 9999)
+            destination_addr = (ip, port)
+        except:
+            print("Not a valid port")
+            quit()
     else:
         destination_addr = destination_p_address
         keepalive_addr = (destination_addr[0], 9999)
@@ -270,11 +276,3 @@ def start(destination_p_address = None):
     synchronize_with_server()
     return listen_for_requests()
 
-
-
-# message = "Hellow world!Hellow world!Hellow world!Hellow world!Hellow world!Hellow world!6".encode("utf-8")
-# values = (3, 1, len(message),2, message, 2545)
-# packed_data = header.pack(*values)
-
-# client_socket.sendto(packed_data, destination_addr)
-# print(client_socket.recvfrom(fragment_size)[0].decode("utf-8"))

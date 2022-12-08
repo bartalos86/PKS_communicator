@@ -3,6 +3,7 @@ import os
 import random
 import socket
 import struct
+import sys
 import threading
 import time
 import zlib
@@ -266,12 +267,12 @@ def process_keep_alive():
             if timeout_count > 3:
                 print(f"Keepalive timed out - {timeout_count}")
                 exit = True
-                quit()
+                break
 
         except ConnectionResetError:
             print("connection has been reset! - Keepalive")
             exit = True
-            quit()
+            break
         
 def listen_for_commands():
     global keepalive_thread
@@ -294,10 +295,13 @@ def listen_for_commands():
         print("2 - send file")
         print("3 - task switch")
         print("4 - exit")
+        response = None
         try:
-            response = input()
+            sys.stdout.flush()
+            response = input("Your response:\n")
         except ValueError:
-            pass
+            sys.stdin.flush()
+            
 
         if response == "1":
             send_text()
@@ -338,9 +342,13 @@ def start(server_p_address = None):
             ip = str(input())
 
         print("Listening port:")
-        port = int(input())
-        server_address = (ip, port)
-        keepalive_address = (ip, 9999)
+        try:
+            port = int(input())
+            server_address = (ip, port)
+            keepalive_address = (ip, 9999)
+        except:
+            print("Not a valid port")
+            return
     else:
         server_address = server_p_address
         keepalive_address = (server_p_address[0], 9999)
@@ -356,13 +364,5 @@ def start(server_p_address = None):
     keepalive_socket.bind(keepalive_address)
     synchronize_with_client()
     return listen_for_commands()
-
-
-
-# message, address = server_socket.recvfrom(fragment_size)
-# unpacked_data = header.unpack(message)
-# data = unpacked_data[4][:int(unpacked_data[2])]
-# print(unpacked_data)
-# print(data)
 
     
