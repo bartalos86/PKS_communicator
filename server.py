@@ -239,6 +239,8 @@ def send_task_switch():
             print("Connection has been reset.")
             exit = True
             quit()
+        except:
+            print("Some unknown error ocurred!")
 
 
 

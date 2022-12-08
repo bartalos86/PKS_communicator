@@ -95,6 +95,8 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
                 if timeout_number > 5:
                     print("Connection timed out no data received!")
                     quit()
+            except:
+                print("Some unknown error ocurred!")
 
     if data_type == data_type_enum.MESSAGE:
         print("Full data receeived!")
@@ -251,7 +253,7 @@ def start(destination_p_address = None):
 
     # Keepalive
     keepalive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    keepalive_socket.settimeout(3.0)
+    keepalive_socket.settimeout(5.0)
 
     #Application start
     if destination_p_address == None:
