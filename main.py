@@ -12,7 +12,11 @@ def start():
             print("1 - server")
             print("2 - client")
             print("3 - exit")
-            option = int(input())
+            try:
+                option = int(input("Your choice: "))
+            except:
+                print("Value is not a correct number")
+                continue
 
         if option == 1:
             print("Starting server...")

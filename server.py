@@ -125,7 +125,7 @@ def send_data(data = None, data_type = 0, data_fragment_size = 1024, path = "/nu
                 if resp[0] == connection_type.OK and client_address[1] == address[1] and resp[1] == frag_num:
                     sent = True
                 elif resp[0] == connection_type.RESEND_DATA and resp[1] == frag_num:
-                    print("Resend")
+                    print(f"Resending packet")
                 elif resp[0] == connection_type.RESEND_DATA:
                     print(f"Resend previous - {resp[1]} - {frag_num}")
                     frag_num = resp[1]
@@ -197,6 +197,7 @@ def send_file():
     try: 
         file = open(path, "rb")
         data = file.read()
+        file.close()
     except:
         print("File does not exist or cannot be read.")
         return
@@ -297,11 +298,10 @@ def listen_for_commands():
         print("4 - exit")
         response = None
         try:
-            sys.stdout.flush()
-            response = input("Your response:\n")
-        except ValueError:
-            sys.stdin.flush()
-            
+            response = input("Your response:")
+        except:
+            print("The program has been closed")
+            break
 
         if response == "1":
             send_text()
@@ -334,10 +334,10 @@ def start(server_p_address = None):
         # ip = str(input())
         ip = socket.gethostbyname(socket.gethostname())
         print(f"Listening Ip address: {ip}")
-        print("Do you want this Ip? (y)")
+        print("Do you want this Ip? [y/n](y)")
         resp = input()
 
-        if resp == 'n':
+        if resp.lower() == "n":
             print("Custom listening Ip:")
             ip = str(input())
 

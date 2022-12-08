@@ -107,6 +107,7 @@ def receive_data(data_type = 0, data_fragment_size = 1024, total_fragments = 1, 
         ppath.parent.mkdir(parents=True, exist_ok=True)
         file = open(path, "wb")
         file.write(data)
+        file.close()
 
     print("--------------------------------------------")
     if data_type == 1:
