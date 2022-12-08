@@ -294,7 +294,10 @@ def listen_for_commands():
         print("2 - send file")
         print("3 - task switch")
         print("4 - exit")
-        response  = input()
+        try:
+            response = input()
+        except ValueError:
+            pass
 
         if response == "1":
             send_text()

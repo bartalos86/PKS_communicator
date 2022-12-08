@@ -134,7 +134,7 @@ def send_keep_alive():
             header_data = keepalive_header.pack(*(connection_type.KEEP_ALIVE, packet_num, 0, 0, b"", 0)) #KEEP_ALIVE
             keepalive_socket.sendto(header_data, keepalive_addr)
             packet_num = packet_num +1
-            time.sleep(3)
+            time.sleep(5)
             message, _ = keepalive_socket.recvfrom(fragment_size)
             packet = keepalive_header.unpack(message)
             ok_id = packet[1]
