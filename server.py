@@ -320,9 +320,20 @@ def start(server_p_address = None):
     global server_socket
     global keepalive_socket
     keepalive_address = None
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
     if server_p_address == None:
-        print("Listening Ip:")
-        ip = str(input())
+        # print("Listening Ip:")
+        # ip = str(input())
+        ip = socket.gethostbyname(socket.gethostname())
+        print(f"Listening Ip address: {ip}")
+        print("Do you want this Ip? (y)")
+        resp = input()
+
+        if resp == 'n':
+            print("Custom listening Ip:")
+            ip = str(input())
+
         print("Listening port:")
         port = int(input())
         server_address = (ip, port)
@@ -333,7 +344,6 @@ def start(server_p_address = None):
 
 
     
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind(server_address)
     server_socket.settimeout(3.5)
 
